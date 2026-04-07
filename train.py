@@ -16,6 +16,9 @@ from torch.profiler import profile, ProfilerActivity
 USE_GPU_PYTORCH = True
 USE_PROFILE = False
 
+
+SH_DEGREE = 0
+
 class GSSTrainer(Trainer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -87,11 +90,12 @@ if __name__ == "__main__":
     raw_points = points.random_sample(2**14)
     # raw_points.write_ply(open('points.ply', 'wb'))
 
-    gaussModel = GaussModel(sh_degree=4, debug=False)
+    gaussModel = GaussModel(sh_degree=SH_DEGREE, debug=False)
     gaussModel.create_from_pcd(pcd=raw_points)
     
     render_kwargs = {
         'white_bkgd': True,
+        'active_sh_degree':SH_DEGREE,
     }
 
     trainer = GSSTrainer(model=gaussModel, 
