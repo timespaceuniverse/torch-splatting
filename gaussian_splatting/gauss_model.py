@@ -80,6 +80,30 @@ class GaussModel(nn.Module):
             colors = np.zeros_like(colors)
             opacities = inverse_sigmoid(0.9 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
 
+
+        
+
+
+
+        #lets try some funny initialization
+        #my_x= fused_point_cloud[:,0]
+        #my_y= fused_point_cloud[:,1]
+        #my_z= fused_point_cloud[:,2]
+
+
+        #rx=torch.rand(10)-0.5
+
+        #max_x, _ = torch.max(my_x, dim=0)
+        #max_y, _ = torch.max(my_y, dim=0)
+
+        #min_x, _ = torch.min(my_x, dim=0)
+        #min_y, _ = torch.min(my_y, dim=0)
+
+
+
+        fused_point_cloud[:,0]=torch.rand(fused_point_cloud.shape[0])-0.5
+        fused_point_cloud[:,1]=torch.rand(fused_point_cloud.shape[0])-0.5
+
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
         self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))
         self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True))
