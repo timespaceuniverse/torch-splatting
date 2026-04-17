@@ -19,7 +19,7 @@ USE_PROFILE = False
 
 SH_DEGREE = 0
 
-class GSSTrainer(Trainer):
+class SSTrainer(Trainer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.data = kwargs.get('data')
@@ -99,7 +99,7 @@ if __name__ == "__main__":
         'active_sh_degree':SH_DEGREE,
     }
 
-    trainer = GSSTrainer(model=sModel, 
+    trainer = SSTrainer(model=sModel, 
         data=data,
         train_batch_size=1, 
         train_num_steps=25000,
