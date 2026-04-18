@@ -6,8 +6,8 @@ import gaussian_splatting.utils.loss_utils as loss_utils
 from gaussian_splatting.utils.data_utils import read_all
 from gaussian_splatting.utils.camera_utils import to_viewpoint_camera
 from gaussian_splatting.utils.point_utils import get_point_clouds
-from gaussian_splatting.s_model import SModel
-from gaussian_splatting.s_render import SRenderer
+from gaussian_splatting.gauss_model import GaussModel
+from gaussian_splatting.gauss_render import GaussRenderer
 
 import contextlib
 
@@ -23,8 +23,7 @@ class GSSTrainer(Trainer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.data = kwargs.get('data')
-        #self.gaussRender = GaussRenderer(**kwargs.get('render_kwargs', {}))
-        self.sRender = SRenderer(**kwargs.get('render_kwargs', {}))
+        self.gaussRender = GaussRenderer(**kwargs.get('render_kwargs', {}))
         self.lambda_dssim = 0.2
         self.lambda_depth = 0.0
     
@@ -43,7 +42,7 @@ class GSSTrainer(Trainer):
             prof = contextlib.nullcontext()
 
         with prof:
-            out = self.sRender(pc=self.model, camera=camera)
+            out = self.gaussRender(pc=self.model, camera=camera)
 
         if USE_PROFILE:
             print(prof.key_averages(group_by_stack_n=True).table(sort_by='self_cuda_time_total', row_limit=20))
@@ -91,15 +90,15 @@ if __name__ == "__main__":
     raw_points = points.random_sample(2**14)
     # raw_points.write_ply(open('points.ply', 'wb'))
 
-    sModel = SModel(sh_degree=SH_DEGREE, debug=False)
-    sModel.create_from_pcd(pcd=raw_points)
+    gaussModel = GaussModel(sh_degree=SH_DEGREE, debug=False)
+    gaussModel.create_from_pcd(pcd=raw_points)
     
     render_kwargs = {
         'white_bkgd': True,
         'active_sh_degree':SH_DEGREE,
     }
 
-    trainer = GSSTrainer(model=sModel, 
+    trainer = GSSTrainer(model=gaussModel, 
         data=data,
         train_batch_size=1, 
         train_num_steps=25000,

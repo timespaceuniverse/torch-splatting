@@ -65,20 +65,26 @@ class SModel(nn.Module):
         opacity_sigma = torch.ones((fused_point_cloud.shape[0], 1), device="cuda")*0.1
 
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
+        self._color =  nn.Parameter(fused_color.requires_grad_(True))
         self._scaling = nn.Parameter(scales.requires_grad_(True))
         self._opacity_sigma = nn.Parameter(opacity_sigma.requires_grad_(True))
+         
    
         return self
     
     @property
-    def get_opacity_sigma(self):
+    def get_opacity(self):
         return torch.relu(self._opacity_sigma)
 
     @property
-    def get_scale(self):
+    def get_scaling(self):
         return torch.relu(self._scaling)
 
     @property
-    def get_location(self):
+    def get_xyz(self):
         return  self._xyz
+
+    @property
+    def get_color(self):
+        return torch.relu(self._color)
     
