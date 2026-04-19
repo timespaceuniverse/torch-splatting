@@ -60,9 +60,11 @@ class SModel(nn.Module):
         #initialize all params 
         fused_point_cloud[:,0]=torch.rand(fused_point_cloud.shape[0])-0.5
         fused_point_cloud[:,1]=torch.rand(fused_point_cloud.shape[0])-0.5
-        fused_color[:,:]=0.0
+        #fused_color[:,:]=0.0
+        fused_color[:,:]=-5.0 # after sigmoid it is around 0.0
         scales = torch.ones((fused_point_cloud.shape[0], 1), device="cuda")*0.1 
-        opacity_sigma = torch.ones((fused_point_cloud.shape[0], 1), device="cuda")*0.1
+        # opacity_sigma = torch.ones((fused_point_cloud.shape[0], 1), device="cuda")*0.1 
+        opacity_sigma = torch.ones((fused_point_cloud.shape[0], 1), device="cuda")*-2.0 # after sigmoid which is around 0.1
 
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
         self._color =  nn.Parameter(fused_color.requires_grad_(True))
@@ -74,7 +76,8 @@ class SModel(nn.Module):
     
     @property
     def get_opacity(self):
-        return torch.relu(self._opacity_sigma)
+        #return torch.relu(self._opacity_sigma)
+        return torch.sigmoid(self._opacity_sigma)
 
     @property
     def get_scaling(self):
@@ -86,5 +89,6 @@ class SModel(nn.Module):
 
     @property
     def get_color(self):
-        return torch.relu(self._color)
+        #return torch.relu(self._color)
+        return torch.sigmoid(self._color)
     
