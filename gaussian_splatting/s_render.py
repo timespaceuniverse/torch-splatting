@@ -14,7 +14,16 @@ def homogeneous(points):
     """
     return torch.cat([points, torch.ones_like(points[..., :1])], dim=-1)
 
- 
+
+
+@torch.no_grad()
+def cal_depth(points,camera):
+    
+    points_o = homogeneous(points) # object space
+    p_view = points_o @ camera.world_view_transform
+    points_z=p_view[:,2]
+    return points_z
+
 
 @torch.no_grad()
 def cal_pixel_boundary(points,scales,camera):
@@ -77,7 +86,7 @@ def cal_visible_mask(points,scales,camera):
     points_o = homogeneous(points) # object space
     p_view = points_o @ camera.world_view_transform
     #in_mask = p_view[..., 2] >= 0.    
-    in_mask = p_view[..., 2]-scales >= 0.2 # a stronger requirement 
+    in_mask = p_view[..., 2]-scales >= 0.2 # a stronger requirement that takes boundary into consideration
     return in_mask
 
 
@@ -116,60 +125,88 @@ class SRenderer(nn.Module):
 
     
 
-    def render(self, camera, pixel_boundary,points,color, opacity,scales,pixel_view_direction_world,pixel_grid):
-        #radii = get_radius(cov2d)
-        #rect = get_rect(means2D, radii, width=camera.image_width, height=camera.image_height)
+    
 
-        if(self.pix_coord is None):
-            self.pix_coord = torch.stack(torch.meshgrid(torch.arange(camera.image_width), torch.arange(camera.image_height), indexing='xy'), dim=-1).to('cuda')
+    def render(self, camera, pixel_boundary,points,color, opacity,scales,
+               depth,pixel_direction_world,pixel_grid):
 
-        self.render_color = torch.ones(*self.pix_coord.shape[:2], 3).to('cuda')
-        self.render_depth = torch.zeros(*self.pix_coord.shape[:2], 1).to('cuda')
-        self.render_alpha = torch.zeros(*self.pix_coord.shape[:2], 1).to('cuda')
+        self.render_color = torch.ones(*pixel_grid.shape[:2], 3).to('cuda')
+        self.render_alpha = torch.zeros(*pixel_grid.shape[:2], 1).to('cuda')
+        self.render_depth = torch.zeros(*pixel_grid.shape[:2], 1).to('cuda')
 
         TILE_SIZE = 64
-        for h in range(0, camera.image_height, TILE_SIZE):
-            for w in range(0, camera.image_width, TILE_SIZE):
-                # check if the rectangle penetrate the tile
-                over_tl = rect[0][..., 0].clip(min=w), rect[0][..., 1].clip(min=h)
-                over_br = rect[1][..., 0].clip(max=w+TILE_SIZE-1), rect[1][..., 1].clip(max=h+TILE_SIZE-1)
-                in_mask = (over_br[0] > over_tl[0]) & (over_br[1] > over_tl[1]) # 3D gaussian in the tile 
-                
+        for w in range(0, camera.image_width, TILE_SIZE):
+            for h in range(0, camera.image_height, TILE_SIZE):
+                over_tl = pixel_boundary[:,0].clip(min=w) , pixel_boundary[:,2].clip(min=h)
+                over_br = pixel_boundary[:,1].clip(max=w+TILE_SIZE-1), pixel_boundary[:,3].clip(max=h+TILE_SIZE-1)
+                in_mask = (over_br[0] > over_tl[0]) & (over_br[1] > over_tl[1]) # in this tile
+
                 if not in_mask.sum() > 0:
                     continue
 
-                P = in_mask.sum()
-                tile_coord = self.pix_coord[h:h+TILE_SIZE, w:w+TILE_SIZE].flatten(0,-2)
-                sorted_depths, index = torch.sort(depths[in_mask])
-                sorted_means2D = means2D[in_mask][index]
-                sorted_cov2d = cov2d[in_mask][index] # P 2 2
-                sorted_conic = sorted_cov2d.inverse() # inverse of variance
+                sorted_depths, index = torch.sort(depth[in_mask])  
+                sorted_xyz = points[in_mask][index]
                 sorted_opacity = opacity[in_mask][index]
-                sorted_color = color[in_mask][index]
-                dx = (tile_coord[:,None,:] - sorted_means2D[None,:]) # B P 2
+                sorted_scales = scales[in_mask][index]
+                sorted_color  = color[in_mask][index]
                 
-                gauss_weight = torch.exp(-0.5 * (
-                    dx[:, :, 0]**2 * sorted_conic[:, 0, 0] 
-                    + dx[:, :, 1]**2 * sorted_conic[:, 1, 1]
-                    + dx[:,:,0]*dx[:,:,1] * sorted_conic[:, 0, 1]
-                    + dx[:,:,0]*dx[:,:,1] * sorted_conic[:, 1, 0]))
-                
-                alpha = (gauss_weight[..., None] * sorted_opacity[None]).clip(max=0.99) # B P 1
-                T = torch.cat([torch.ones_like(alpha[:,:1]), 1-alpha[:,:-1]], dim=1).cumprod(dim=1)
-                acc_alpha = (alpha * T).sum(dim=1)
-                tile_color = (T * alpha * sorted_color[None]).sum(dim=1) + (1-acc_alpha) * (1 if self.white_bkgd else 0)
-                tile_depth = ((T * alpha) * sorted_depths[None,:,None]).sum(dim=1)
-                self.render_color[h:h+TILE_SIZE, w:w+TILE_SIZE] = tile_color.reshape(TILE_SIZE, TILE_SIZE, -1)
-                self.render_depth[h:h+TILE_SIZE, w:w+TILE_SIZE] = tile_depth.reshape(TILE_SIZE, TILE_SIZE, -1)
-                self.render_alpha[h:h+TILE_SIZE, w:w+TILE_SIZE] = acc_alpha.reshape(TILE_SIZE, TILE_SIZE, -1)
+                tile_pixel_direction_world = pixel_direction_world[w:w+TILE_SIZE,h:h+TILE_SIZE]
 
-        return {
-            "render": self.render_color,
-            "depth": self.render_depth,
-            "alpha": self.render_alpha,
-            "visiility_filter": radii > 0,
-            "radii": radii
-        }
+
+        # if(self.pix_coord is None):
+        #     self.pix_coord = torch.stack(
+        #         torch.meshgrid(torch.arange(camera.image_width),
+        #         torch.arange(camera.image_height), indexing='xy'), dim=-1).to('cuda')
+
+        # self.render_color = torch.ones(*self.pix_coord.shape[:2], 3).to('cuda')
+        # self.render_depth = torch.zeros(*self.pix_coord.shape[:2], 1).to('cuda')
+        # self.render_alpha = torch.zeros(*self.pix_coord.shape[:2], 1).to('cuda')
+
+        # TILE_SIZE = 64
+        # for h in range(0, camera.image_height, TILE_SIZE):
+        #     for w in range(0, camera.image_width, TILE_SIZE):
+        #         # check if the rectangle penetrate the tile
+        #         over_tl = rect[0][..., 0].clip(min=w), rect[0][..., 1].clip(min=h)
+        #         over_br = rect[1][..., 0].clip(max=w+TILE_SIZE-1), rect[1][..., 1].clip(max=h+TILE_SIZE-1)
+        #         in_mask = (over_br[0] > over_tl[0]) & (over_br[1] > over_tl[1]) # 3D gaussian in the tile 
+                
+        #         if not in_mask.sum() > 0:
+        #             continue
+
+        #         P = in_mask.sum()
+        #         tile_coord = self.pix_coord[h:h+TILE_SIZE, w:w+TILE_SIZE].flatten(0,-2)
+        #         sorted_depths, index = torch.sort(depths[in_mask])
+        #         sorted_means2D = means2D[in_mask][index]
+        #         sorted_cov2d = cov2d[in_mask][index] # P 2 2
+        #         sorted_conic = sorted_cov2d.inverse() # inverse of variance
+        #         sorted_opacity = opacity[in_mask][index]
+        #         sorted_color = color[in_mask][index]
+        #         dx = (tile_coord[:,None,:] - sorted_means2D[None,:]) # B P 2
+                
+        #         gauss_weight = torch.exp(-0.5 * (
+        #             dx[:, :, 0]**2 * sorted_conic[:, 0, 0] 
+        #             + dx[:, :, 1]**2 * sorted_conic[:, 1, 1]
+        #             + dx[:,:,0]*dx[:,:,1] * sorted_conic[:, 0, 1]
+        #             + dx[:,:,0]*dx[:,:,1] * sorted_conic[:, 1, 0]))
+                
+        #         alpha = (gauss_weight[..., None] * sorted_opacity[None]).clip(max=0.99) # B P 1
+        #         T = torch.cat([torch.ones_like(alpha[:,:1]), 1-alpha[:,:-1]], dim=1).cumprod(dim=1)
+        #         acc_alpha = (alpha * T).sum(dim=1)
+        #         tile_color = (T * alpha * sorted_color[None]).sum(dim=1) + (1-acc_alpha) * (1 if self.white_bkgd else 0)
+        #         tile_depth = ((T * alpha) * sorted_depths[None,:,None]).sum(dim=1)
+        #         self.render_color[h:h+TILE_SIZE, w:w+TILE_SIZE] = tile_color.reshape(TILE_SIZE, TILE_SIZE, -1)
+        #         self.render_depth[h:h+TILE_SIZE, w:w+TILE_SIZE] = tile_depth.reshape(TILE_SIZE, TILE_SIZE, -1)
+        #         self.render_alpha[h:h+TILE_SIZE, w:w+TILE_SIZE] = acc_alpha.reshape(TILE_SIZE, TILE_SIZE, -1)
+
+        # return {
+        #     "render": self.render_color,
+        #     "depth": self.render_depth,
+        #     "alpha": self.render_alpha,
+        #     "visiility_filter": radii > 0,
+        #     "radii": radii
+        # }
+
+        return {}
 
 
     @torch.no_grad()
@@ -230,12 +267,10 @@ class SRenderer(nn.Module):
             color = color[boundary_mask]
             opacity = opacity[boundary_mask]
             scales = scales[boundary_mask]
+
+        with prof("cal depth"):
+            depth = cal_depth(xyz,camera)
         
-        # with prof("build color"):
-        #     mean_coord_x = ((mean_ndc[..., 0] + 1) * camera.image_width - 1.0) * 0.5
-        #     mean_coord_y = ((mean_ndc[..., 1] + 1) * camera.image_height - 1.0) * 0.5
-        #     means2D = torch.stack([mean_coord_x, mean_coord_y], dim=-1)
-    
 
         with prof("render"):
             rets = self.render(
@@ -245,7 +280,8 @@ class SRenderer(nn.Module):
                 color=color,
                 opacity=opacity, 
                 scales = scales,
-                pixel_view_direction_world=pixel_view_direction_world,
+                depth = depth,
+                pixel_direction_world=pixel_view_direction_world,
                 pixel_grid=pixel_grid,
             )
 
