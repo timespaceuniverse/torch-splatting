@@ -62,9 +62,9 @@ class SModel(nn.Module):
         fused_point_cloud[:,1]=torch.rand(fused_point_cloud.shape[0])-0.5
         #fused_color[:,:]=0.0
         fused_color[:,:]=-5.0 # after sigmoid it is around 0.0
-        scales = torch.ones((fused_point_cloud.shape[0], 1), device="cuda")*0.1 
+        scales = torch.ones((fused_point_cloud.shape[0]), device="cuda")*0.01 
         # opacity_sigma = torch.ones((fused_point_cloud.shape[0], 1), device="cuda")*0.1 
-        opacity_sigma = torch.ones((fused_point_cloud.shape[0], 1), device="cuda")*-2.0 # after sigmoid which is around 0.1
+        opacity_sigma = torch.ones((fused_point_cloud.shape[0]), device="cuda")*-2.0 # after sigmoid which is around 0.1
 
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
         self._color =  nn.Parameter(fused_color.requires_grad_(True))

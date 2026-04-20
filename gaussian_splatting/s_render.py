@@ -19,27 +19,24 @@ def homogeneous(points):
 @torch.no_grad()
 def cal_pixel_boundary(points,scales,camera):
     
-    points_x=points[:,0]
-    points_y=points[:,1]
-    points_z=points[:,2]
+    points_o = homogeneous(points) # object space
+    p_view = points_o @ camera.world_view_transform
+    
+    points_x=p_view[:,0]
+    points_y=p_view[:,1]
+    points_z=p_view[:,2]
 
     u_delta=scales*torch.sqrt(points_x*points_x+points_z*points_z-scales*scales)
+    v_delta=scales*torch.sqrt(points_y*points_y+points_z*points_z-scales*scales)
 
     denominator = points_z*points_z-scales*scales
 
     u_min=camera.focal_x*(points_x*points_z-u_delta)/denominator
     u_max=camera.focal_x*(points_x*points_z+u_delta)/denominator
 
-    v_delta=scales*torch.sqrt(points_y*points_y+points_z*points_z-scales*scales)
+  
     v_min=camera.focal_y*(points_y*points_z-v_delta)/denominator
     v_max=camera.focal_y*(points_y*points_z+v_delta)/denominator
-
-
-    u_min= u_min
-    u_max= u_max
-
-    v_min= v_min
-    v_max= v_max
 
     #change to non negative pixel style
     u_min=u_min+0.5*camera.image_width
@@ -47,27 +44,40 @@ def cal_pixel_boundary(points,scales,camera):
     v_min=v_min+0.5*camera.image_height
     v_max=v_max+0.5*camera.image_height
 
-    pixel_boundary= torch.cat([u_min, u_max, v_min , v_max], dim=-1)
+    u_min_mask= u_min < camera.image_width-1
+    u_max_mask= u_max > 1
+    v_min_mask= v_min < camera.image_height-1
+    v_max_mask= v_max > 1
+
+    boundary_mask= u_min_mask&u_max_mask&v_min_mask&v_max_mask
+
+    pixel_boundary= torch.cat([
+        torch.unsqueeze(u_min,dim=-1),
+        torch.unsqueeze(u_max,dim=-1),
+        torch.unsqueeze(v_min,dim=-1),
+        torch.unsqueeze(v_max,dim=-1) ], dim=-1)
     
-    return pixel_boundary
+    return pixel_boundary[boundary_mask],boundary_mask
 
 
-def projection(points,camera):
-    viewmatrix=camera.world_view_transform, 
-    projmatrix=camera.projection_matrix #ndc projection matrix
-    points_o = homogeneous(points) # object space
-    points_h = points_o @ viewmatrix @ projmatrix # screen space   projmatrix is ndc style
-    p_w = 1.0 / (points_h[..., -1:] + 0.000001)
-    p_proj = points_h * p_w
-    p_view = points_o @ viewmatrix
-    in_mask = p_view[..., 2] >= 0.2
-    return p_proj, in_mask 
+# def projection(points,camera):
+#     viewmatrix=camera.world_view_transform, 
+#     projmatrix=camera.projection_matrix #ndc projection matrix
+#     points_o = homogeneous(points) # object space
+#     points_h = points_o @ viewmatrix @ projmatrix # screen space   projmatrix is ndc style
+#     p_w = 1.0 / (points_h[..., -1:] + 0.000001)
+#     p_proj = points_h * p_w
+#     p_view = points_o @ viewmatrix
+#     in_mask = p_view[..., 2] >= 0.2
+#     return p_proj, in_mask 
 
 @torch.no_grad()
-def cal_visible_mask(points,camera):
+def cal_visible_mask(points,scales,camera):
+
     points_o = homogeneous(points) # object space
-    p_view = points_o @ camera.world_view_transform,
-    in_mask = p_view[..., 2] >= 0.2
+    p_view = points_o @ camera.world_view_transform
+    #in_mask = p_view[..., 2] >= 0.    
+    in_mask = p_view[..., 2]-scales >= 0.2 # a stronger requirement 
     return in_mask
 
 
@@ -105,7 +115,8 @@ class SRenderer(nn.Module):
         
 
     
-    def render(self, camera, means2D,color, opacity,scales,pixel_view_direction_world,pixel_grid):
+
+    def render(self, camera, pixel_boundary,points,color, opacity,scales,pixel_view_direction_world,pixel_grid):
         #radii = get_radius(cov2d)
         #rect = get_rect(means2D, radii, width=camera.image_width, height=camera.image_height)
 
@@ -205,7 +216,7 @@ class SRenderer(nn.Module):
         #     mean_ndc = mean_ndc[in_mask]
 
         with prof("cal_visible_mask"):
-            in_mask=cal_visible_mask(xyz,camera)
+            in_mask=cal_visible_mask(pc.get_xyz,pc.get_scaling,camera)
             assert in_mask.any(), "No points in the frustum"
             xyz = pc.get_xyz[in_mask]
             color = pc.get_color[in_mask]
@@ -214,7 +225,11 @@ class SRenderer(nn.Module):
 
 
         with prof("cal boundary"):
-            pixel_boundary = cal_pixel_boundary(xyz,scales,camera)
+            pixel_boundary,boundary_mask = cal_pixel_boundary(xyz,scales,camera)
+            xyz = xyz[boundary_mask]
+            color = color[boundary_mask]
+            opacity = opacity[boundary_mask]
+            scales = scales[boundary_mask]
         
         # with prof("build color"):
         #     mean_coord_x = ((mean_ndc[..., 0] + 1) * camera.image_width - 1.0) * 0.5
