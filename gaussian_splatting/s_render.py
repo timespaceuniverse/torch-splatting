@@ -127,12 +127,16 @@ class SRenderer(nn.Module):
 
     
 
-    def render(self, camera, pixel_boundary,points,color, opacity,scales,
+    def render(self, camera, pixel_boundary,points,color, opacity_sigma,scales,
                depth,pixel_direction_world,pixel_grid):
 
         self.render_color = torch.ones(*pixel_grid.shape[:2], 3).to('cuda')
         self.render_alpha = torch.zeros(*pixel_grid.shape[:2], 1).to('cuda')
         self.render_depth = torch.zeros(*pixel_grid.shape[:2], 1).to('cuda')
+
+        #cal the critical points of all xyz  , 1-exp(-2*scale*sigma*sqrt(1-(d/R)^2))
+        critical_ratio= torch.tensor([0,0.3,0.6,0.9,1],device="cuda")
+        critical_points= 1-torch.exp(torch.outer(-2*scales*opacity_sigma,torch.sqrt(1-critical_ratio)))
 
         TILE_SIZE = 64
         for w in range(0, camera.image_width, TILE_SIZE):
@@ -146,11 +150,24 @@ class SRenderer(nn.Module):
 
                 sorted_depths, index = torch.sort(depth[in_mask])  
                 sorted_xyz = points[in_mask][index]
-                sorted_opacity = opacity[in_mask][index]
+                sorted_opacity_sigma = opacity_sigma[in_mask][index]
                 sorted_scales = scales[in_mask][index]
                 sorted_color  = color[in_mask][index]
                 
                 tile_pixel_direction_world = pixel_direction_world[w:w+TILE_SIZE,h:h+TILE_SIZE]
+
+                view_ray_center_vector=torch.cross(tile_pixel_direction_world.unsqueeze(2) ,sorted_xyz.unsqueeze(0).unsqueeze(0))
+                view_ray_center_dsqaure=(view_ray_center_vector**2).sum(dim=-1)
+                view_ray_c_d_ratio = view_ray_center_dsqaure/(sorted_scales*sorted_scales)
+                print(view_ray_c_d_ratio.shape)
+
+                #critical points , distance => final opacity and color
+                tile_alpha = torch.zeros(view_ray_c_d_ratio.shape,device="cuda")
+                c01_index= view_ray_c_d_ratio <=0.3 
+                tile_alpha[c01_index]= view_ray_c_d_ratio[c01_index]
+                print(c01_index.shape)
+                
+
 
 
         # if(self.pix_coord is None):
@@ -244,6 +261,10 @@ class SRenderer(nn.Module):
             #convert it to the world space
             pixel_xyz = pixel_xyz @ (camera.c2w.permute(1,0))
             pixel_xyz = pixel_xyz[:,:,:-1] #remove the last 1 
+            #cal the vector point to camer center
+            pixel_xyz[:,:,0]=pixel_xyz[:,:,0]- camera.c2w[0,3]
+            pixel_xyz[:,:,1]=pixel_xyz[:,:,1]- camera.c2w[1,3]
+            pixel_xyz[:,:,2]=pixel_xyz[:,:,2]- camera.c2w[2,3]
             #the pixel related view normalized direction in world space
             pixel_view_direction_world = torch.nn.functional.normalize(pixel_xyz, p=2, dim=-1)
             
@@ -257,7 +278,7 @@ class SRenderer(nn.Module):
             assert in_mask.any(), "No points in the frustum"
             xyz = pc.get_xyz[in_mask]
             color = pc.get_color[in_mask]
-            opacity = pc.get_opacity[in_mask]
+            opacity_sigma = pc.get_opacity_sigma[in_mask]
             scales = pc.get_scaling[in_mask]
 
 
@@ -265,7 +286,7 @@ class SRenderer(nn.Module):
             pixel_boundary,boundary_mask = cal_pixel_boundary(xyz,scales,camera)
             xyz = xyz[boundary_mask]
             color = color[boundary_mask]
-            opacity = opacity[boundary_mask]
+            opacity_sigma = opacity_sigma[boundary_mask]
             scales = scales[boundary_mask]
 
         with prof("cal depth"):
@@ -278,7 +299,7 @@ class SRenderer(nn.Module):
                 pixel_boundary=pixel_boundary,
                 points = xyz,
                 color=color,
-                opacity=opacity, 
+                opacity_sigma=opacity_sigma, 
                 scales = scales,
                 depth = depth,
                 pixel_direction_world=pixel_view_direction_world,

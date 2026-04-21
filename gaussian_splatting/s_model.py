@@ -75,7 +75,7 @@ class SModel(nn.Module):
         return self
     
     @property
-    def get_opacity(self):
+    def get_opacity_sigma(self):
         #return torch.relu(self._opacity_sigma)
         return torch.sigmoid(self._opacity_sigma)
 
