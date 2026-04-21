@@ -26,6 +26,15 @@ def cal_depth(points,camera):
 
 
 @torch.no_grad()
+def from_world_2_pixel(points,camera):
+    points_o = homogeneous(points) # object space
+    p_view = points_o @ camera.world_view_transform
+    view_xyz=p_view[:,:3]
+    pixel_xyz= view_xyz @ (camera.intrinsic[:3,:3].permute(1,0))
+    return pixel_xyz/pixel_xyz[:,-1]
+
+
+@torch.no_grad()
 def cal_pixel_boundary(points,scales,camera):
     
     points_o = homogeneous(points) # object space
@@ -138,6 +147,10 @@ class SRenderer(nn.Module):
         critical_ratio= torch.tensor([0,0.3,0.6,0.9,1],device="cuda")
         critical_points= 1-torch.exp(torch.outer(-2*scales*opacity_sigma,torch.sqrt(1-critical_ratio)))
 
+        #the points to camera center vector in world space
+        point2camera = points-camera.camera_center
+
+     
         TILE_SIZE = 64
         for w in range(0, camera.image_width, TILE_SIZE):
             for h in range(0, camera.image_height, TILE_SIZE):
@@ -150,22 +163,28 @@ class SRenderer(nn.Module):
 
                 sorted_depths, index = torch.sort(depth[in_mask])  
                 sorted_xyz = points[in_mask][index]
+                sorted_point2camera= point2camera[in_mask][index]
                 sorted_opacity_sigma = opacity_sigma[in_mask][index]
                 sorted_scales = scales[in_mask][index]
                 sorted_color  = color[in_mask][index]
                 
                 tile_pixel_direction_world = pixel_direction_world[w:w+TILE_SIZE,h:h+TILE_SIZE]
 
-                view_ray_center_vector=torch.cross(tile_pixel_direction_world.unsqueeze(2) ,sorted_xyz.unsqueeze(0).unsqueeze(0))
+                view_ray_center_vector=torch.cross(tile_pixel_direction_world.unsqueeze(2) ,sorted_point2camera.unsqueeze(0).unsqueeze(0))
                 view_ray_center_dsqaure=(view_ray_center_vector**2).sum(dim=-1)
                 view_ray_c_d_ratio = view_ray_center_dsqaure/(sorted_scales*sorted_scales)
-                print(view_ray_c_d_ratio.shape)
-
+                ######debug#################
+                #print(view_ray_c_d_ratio.shape)
+                #mapping_points= from_world_2_pixel( sorted_xyz , camera)
+                #print(mapping_points)
+                ######debug#################
                 #critical points , distance => final opacity and color
                 tile_alpha = torch.zeros(view_ray_c_d_ratio.shape,device="cuda")
                 c01_index= view_ray_c_d_ratio <=0.3 
+                print("c01_index.sum():")
+                print(c01_index.sum())
                 tile_alpha[c01_index]= view_ray_c_d_ratio[c01_index]
-                print(c01_index.shape)
+                 
                 
 
 
@@ -227,12 +246,14 @@ class SRenderer(nn.Module):
 
 
     @torch.no_grad()
-    def gen_pixel_grid(self,width,height): 
-        half_w= int(width/2)
-        half_h= int(height/2)
+    def gen_pixel_grid(self,camera): 
+
+
+        #half_w= int(width/2)
+        #half_h= int(height/2)
         #1. Define the 1D range for each dimension
-        x = torch.arange(-half_w+0.5, half_w+0.5, 1) 
-        y = torch.arange(half_h-0.5 ,-half_h-0.5,-1) 
+        x = torch.arange(0, camera.image_width, 1) 
+        y = torch.arange(0 ,camera.image_height,1) 
 
         # 2. Create meshgrid, which returns dense grids (25, 25)
         # Using indexing='ij' for Cartesian-like behavior
@@ -241,7 +262,9 @@ class SRenderer(nn.Module):
         # 3. Stack and reshape to get (Number of points, 2)
         # stack gives (2, 5, 5), permute changes to (5, 5, 2), flatten to (25, 2)
         grid_points = torch.stack([grid_x, grid_y], dim=-1).view(-1, 2)
-        return grid_points.reshape((width, height, 2))
+        grid_points = grid_points.reshape((camera.image_width, camera.image_height, 2))
+
+        return grid_points.to(device="cuda", dtype=torch.float)
 
 
     def forward(self, camera, pc, **kwargs):
@@ -253,21 +276,20 @@ class SRenderer(nn.Module):
             prof = contextlib.nullcontext
 
         with prof("view direction"):       
-            pixel_grid=self.gen_pixel_grid(camera.image_width,camera.image_height)
-            pixel_grid = pixel_grid.to(device="cuda", dtype=torch.float)
+            pixel_grid=self.gen_pixel_grid(camera)
+            pixel_grid[:,:,0]=pixel_grid[:,:,0]-camera.intrinsic[0][2]
+            pixel_grid[:,:,1]=pixel_grid[:,:,1]-camera.intrinsic[1][2]
             pixel2locationMatrix= torch.tensor([1/camera.focal_x,1/camera.focal_y],device="cuda", dtype=torch.float)
             pixel_xy = pixel_grid * pixel2locationMatrix # z actuall equals 1
-            pixel_xyz = torch.cat((pixel_xy, torch.ones((pixel_xy.shape[0],pixel_xy.shape[1],2),device="cuda", dtype=torch.float)), dim=-1)
-            #convert it to the world space
-            pixel_xyz = pixel_xyz @ (camera.c2w.permute(1,0))
-            pixel_xyz = pixel_xyz[:,:,:-1] #remove the last 1 
-            #cal the vector point to camer center
-            pixel_xyz[:,:,0]=pixel_xyz[:,:,0]- camera.c2w[0,3]
-            pixel_xyz[:,:,1]=pixel_xyz[:,:,1]- camera.c2w[1,3]
-            pixel_xyz[:,:,2]=pixel_xyz[:,:,2]- camera.c2w[2,3]
-            #the pixel related view normalized direction in world space
-            pixel_view_direction_world = torch.nn.functional.normalize(pixel_xyz, p=2, dim=-1)
             
+            #
+            pixel_xyz = torch.cat((pixel_xy, torch.ones((pixel_xy.shape[0],pixel_xy.shape[1],1),device="cuda", dtype=torch.float)), dim=-1)
+            direction = pixel_xyz @ (camera.c2w[:3,:3].permute(1,0))
+            
+            #the pixel related view normalized direction in world space
+            pixel_view_direction_world = torch.nn.functional.normalize(direction, p=2, dim=-1)
+            
+
         # with prof("projection"):
         #     mean_ndc, in_mask = projection(xyz,camera)
         #     assert in_mask.any(), "No points in the frustum"
