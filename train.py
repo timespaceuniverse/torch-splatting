@@ -44,7 +44,7 @@ class GSSTrainer(Trainer):
             prof = contextlib.nullcontext()
 
         with prof:
-            
+
             out = self.gaussRender(pc=self.model, camera=camera)
              
 
@@ -62,25 +62,25 @@ class GSSTrainer(Trainer):
 
         return total_loss, log_dict
 
-    # def on_evaluate_step(self, **kwargs):
-    #     import matplotlib.pyplot as plt
-    #     ind = np.random.choice(len(self.data['camera']))
-    #     camera = self.data['camera'][ind]
-    #     if USE_GPU_PYTORCH:
-    #         camera = to_viewpoint_camera(camera)
+    def on_evaluate_step(self, **kwargs):
+        import matplotlib.pyplot as plt
+        ind = np.random.choice(len(self.data['camera']))
+        camera = self.data['camera'][ind]
+        if USE_GPU_PYTORCH:
+            camera = to_viewpoint_camera(camera)
 
-    #     rgb = self.data['rgb'][ind].detach().cpu().numpy()
-    #     out = self.gaussRender(pc=self.model, camera=camera)
-    #     rgb_pd = out['render'].detach().cpu().numpy()
-    #     depth_pd = out['depth'].detach().cpu().numpy()[..., 0]
-    #     depth = self.data['depth'][ind].detach().cpu().numpy()
-    #     depth = np.concatenate([depth, depth_pd], axis=1)
-    #     depth = (1 - depth / depth.max())
-    #     depth = plt.get_cmap('jet')(depth)[..., :3]
-    #     image = np.concatenate([rgb, rgb_pd], axis=1)
-    #     image = np.concatenate([image, depth], axis=0)
-    #     utils.imwrite(str(self.results_folder / f'image-{self.step}.png'), image)
-    #     self.model.save_ply(self.results_folder / f'splats-{self.step}.ply')
+        rgb = self.data['rgb'][ind].detach().cpu().numpy()
+        out = self.gaussRender(pc=self.model, camera=camera)
+        rgb_pd = out['render'].detach().cpu().numpy()
+        depth_pd = out['depth'].detach().cpu().numpy()[..., 0]
+        depth = self.data['depth'][ind].detach().cpu().numpy()
+        depth = np.concatenate([depth, depth_pd], axis=1)
+        depth = (1 - depth / depth.max())
+        depth = plt.get_cmap('jet')(depth)[..., :3]
+        image = np.concatenate([rgb, rgb_pd], axis=1)
+        image = np.concatenate([image, depth], axis=0)
+        utils.imwrite(str(self.results_folder / f'image-{self.step}.png'), image)
+        self.model.save_ply(self.results_folder / f'splats-{self.step}.ply')
 
 if __name__ == "__main__":
     device = 'cuda'
@@ -114,5 +114,5 @@ if __name__ == "__main__":
         render_kwargs=render_kwargs,
     )
 
-    #trainer.on_evaluate_step()
+    trainer.on_evaluate_step()
     trainer.train()

@@ -138,7 +138,7 @@ class SRenderer(nn.Module):
 
     def render(self, camera, pixel_boundary,points,color, opacity_sigma,scales,
                depth,pixel_direction_world,pixel_grid):
-
+        
         self.render_color = torch.zeros(*pixel_grid.shape[:2], 3).to('cuda')
         self.render_alpha = torch.zeros(*pixel_grid.shape[:2], 1).to('cuda')
         #self.render_depth = torch.zeros(*pixel_grid.shape[:2], 1).to('cuda')
