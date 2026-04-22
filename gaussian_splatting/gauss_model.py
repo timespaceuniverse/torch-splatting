@@ -101,8 +101,8 @@ class GaussModel(nn.Module):
 
 
 
-        fused_point_cloud[:,0]=torch.rand(fused_point_cloud.shape[0])-0.5
-        fused_point_cloud[:,1]=torch.rand(fused_point_cloud.shape[0])-0.5
+        #fused_point_cloud[:,0]=torch.rand(fused_point_cloud.shape[0])-0.5
+        #fused_point_cloud[:,1]=torch.rand(fused_point_cloud.shape[0])-0.5
 
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
         self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))

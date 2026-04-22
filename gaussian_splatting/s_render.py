@@ -132,9 +132,6 @@ class SRenderer(nn.Module):
         self.pix_coord = None
         
 
-    
-
-    
 
     def render(self, camera, pixel_boundary,points,color, opacity_sigma,scales,
                depth,pixel_direction_world,pixel_grid):
@@ -147,6 +144,14 @@ class SRenderer(nn.Module):
         #critical_ratio= torch.tensor([0,0.3,0.6,0.9,1],device="cuda")
         #critical_points= 1-torch.exp(torch.outer(-2*scales*opacity_sigma,torch.sqrt(1-critical_ratio)))
 
+    
+        sorted_depths, index = torch.sort(depth)
+        opacity_sigma = opacity_sigma[index]
+        scales = scales[index]
+        color  = color[index]
+        points = points[index]
+        pixel_boundary = pixel_boundary[index]
+
         #the points to camera center vector in world space
         point2camera = points-camera.camera_center
 
@@ -154,6 +159,7 @@ class SRenderer(nn.Module):
         TILE_SIZE = 64
         for w in range(0, camera.image_width, TILE_SIZE):
             for h in range(0, camera.image_height, TILE_SIZE):
+
                 over_tl = pixel_boundary[:,0].clip(min=w) , pixel_boundary[:,2].clip(min=h)
                 over_br = pixel_boundary[:,1].clip(max=w+TILE_SIZE-1), pixel_boundary[:,3].clip(max=h+TILE_SIZE-1)
                 in_mask = (over_br[0] > over_tl[0]) & (over_br[1] > over_tl[1]) # in this tile
@@ -161,18 +167,25 @@ class SRenderer(nn.Module):
                 if not in_mask.sum() > 0:
                     continue
 
-                sorted_depths, index = torch.sort(depth[in_mask])  
-                #sorted_xyz = points[in_mask][index]
-                sorted_point2camera= point2camera[in_mask][index]
-                sorted_opacity_sigma = opacity_sigma[in_mask][index]
-                sorted_scales = scales[in_mask][index]
-                sorted_color  = color[in_mask][index]
-                #sorted_critical_points= critical_points[in_mask][index]
-                
-                tile_pixel_direction_world = pixel_direction_world[w:w+TILE_SIZE,h:h+TILE_SIZE]
+                # sorted_depths, index = torch.sort(depth[in_mask])  
+                # sorted_xyz = points[in_mask][index]
+                # sorted_point2camera= point2camera[in_mask][index]
+                # sorted_opacity_sigma = opacity_sigma[in_mask][index]
+                # sorted_scales = scales[in_mask][index]
+                # sorted_color  = color[in_mask][index]
+                # sorted_critical_points= critical_points[in_mask][index]
 
+                sorted_point2camera= point2camera[in_mask]
+                sorted_opacity_sigma = opacity_sigma[in_mask]
+                sorted_scales = scales[in_mask]
+                sorted_color  = color[in_mask]
+
+
+                tile_pixel_direction_world = pixel_direction_world[w:w+TILE_SIZE,h:h+TILE_SIZE]
                 view_ray_center_vector=torch.cross(tile_pixel_direction_world.unsqueeze(2) ,sorted_point2camera.unsqueeze(0).unsqueeze(0))
                 view_ray_center_dsqaure=(view_ray_center_vector**2).sum(dim=-1)
+               
+
                 #view_ray_c_d_ratio = view_ray_center_dsqaure/(sorted_scales*sorted_scales)
                 ######debug#################
                 #print(view_ray_c_d_ratio.shape)

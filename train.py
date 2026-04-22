@@ -65,6 +65,7 @@ class GSSTrainer(Trainer):
     def on_evaluate_step(self, **kwargs):
         import matplotlib.pyplot as plt
         ind = np.random.choice(len(self.data['camera']))
+        ind = 0
         camera = self.data['camera'][ind]
         if USE_GPU_PYTORCH:
             camera = to_viewpoint_camera(camera)

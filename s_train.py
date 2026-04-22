@@ -44,10 +44,10 @@ class SSTrainer(Trainer):
             prof = contextlib.nullcontext()
 
         with prof:
-            #fromt =round(time.time() * 1000)
+            fromt =round(time.time() * 1000)
             out = self.sRender(pc=self.model, camera=camera)
-            # print("render cost :")
-            # print(round(time.time() * 1000)-fromt)
+            print("render cost :")
+            print(round(time.time() * 1000)-fromt)
 
         if USE_PROFILE:
             print(prof.key_averages(group_by_stack_n=True).table(sort_by='self_cuda_time_total', row_limit=20))
@@ -68,6 +68,7 @@ class SSTrainer(Trainer):
     def on_evaluate_step(self, **kwargs):
         import matplotlib.pyplot as plt
         ind = np.random.choice(len(self.data['camera']))
+        ind = 0 
         camera = self.data['camera'][ind]
         if USE_GPU_PYTORCH:
             camera = to_viewpoint_camera(camera)
