@@ -9,6 +9,8 @@ from gaussian_splatting.utils.point_utils import get_point_clouds
 from gaussian_splatting.gauss_model import GaussModel
 from gaussian_splatting.gauss_render import GaussRenderer
 
+import time 
+
 import contextlib
 
 from torch.profiler import profile, ProfilerActivity
@@ -42,7 +44,9 @@ class GSSTrainer(Trainer):
             prof = contextlib.nullcontext()
 
         with prof:
+            
             out = self.gaussRender(pc=self.model, camera=camera)
+             
 
         if USE_PROFILE:
             print(prof.key_averages(group_by_stack_n=True).table(sort_by='self_cuda_time_total', row_limit=20))

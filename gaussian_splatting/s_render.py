@@ -144,13 +144,12 @@ class SRenderer(nn.Module):
         #self.render_depth = torch.zeros(*pixel_grid.shape[:2], 1).to('cuda')
 
         #cal the critical points of all xyz  , 1-exp(-2*scale*sigma*sqrt(1-(d/R)^2))
-        critical_ratio= torch.tensor([0,0.3,0.6,0.9,1],device="cuda")
-        critical_points= 1-torch.exp(torch.outer(-2*scales*opacity_sigma,torch.sqrt(1-critical_ratio)))
+        #critical_ratio= torch.tensor([0,0.3,0.6,0.9,1],device="cuda")
+        #critical_points= 1-torch.exp(torch.outer(-2*scales*opacity_sigma,torch.sqrt(1-critical_ratio)))
 
         #the points to camera center vector in world space
         point2camera = points-camera.camera_center
 
-       
      
         TILE_SIZE = 64
         for w in range(0, camera.image_width, TILE_SIZE):
@@ -165,57 +164,63 @@ class SRenderer(nn.Module):
                 sorted_depths, index = torch.sort(depth[in_mask])  
                 #sorted_xyz = points[in_mask][index]
                 sorted_point2camera= point2camera[in_mask][index]
-                #sorted_opacity_sigma = opacity_sigma[in_mask][index]
+                sorted_opacity_sigma = opacity_sigma[in_mask][index]
                 sorted_scales = scales[in_mask][index]
                 sorted_color  = color[in_mask][index]
-                sorted_critical_points= critical_points[in_mask][index]
+                #sorted_critical_points= critical_points[in_mask][index]
                 
                 tile_pixel_direction_world = pixel_direction_world[w:w+TILE_SIZE,h:h+TILE_SIZE]
 
                 view_ray_center_vector=torch.cross(tile_pixel_direction_world.unsqueeze(2) ,sorted_point2camera.unsqueeze(0).unsqueeze(0))
                 view_ray_center_dsqaure=(view_ray_center_vector**2).sum(dim=-1)
-                view_ray_c_d_ratio = view_ray_center_dsqaure/(sorted_scales*sorted_scales)
+                #view_ray_c_d_ratio = view_ray_center_dsqaure/(sorted_scales*sorted_scales)
                 ######debug#################
                 #print(view_ray_c_d_ratio.shape)
                 #mapping_points= from_world_2_pixel( sorted_xyz , camera)
                 #print(mapping_points)
+                
+                
+                ######debug#################
+                tile_alpha = 1-torch.exp(-2.0*sorted_opacity_sigma*torch.sqrt(torch.clamp(sorted_scales*sorted_scales-view_ray_center_dsqaure, min=0)))
+                
+                
                 ######debug#################
                 #critical points , distance => final opacity and color
-                tile_alpha = torch.zeros(view_ray_c_d_ratio.shape,device="cuda")
+                # tile_alpha = torch.zeros(view_ray_c_d_ratio.shape,device="cuda")
 
-                scp_view = sorted_critical_points.unsqueeze(0).unsqueeze(0).expand(64, 64, -1, -1)
+                # scp_view = sorted_critical_points.unsqueeze(0).unsqueeze(0).expand(TILE_SIZE, TILE_SIZE, -1, -1)
                 
-                #attention the critical point interval must be excluded
-                c01_index= view_ray_c_d_ratio <=0.3 
-                #print("c01_index.sum():")
-                #print(c01_index.sum())
-                c01_a_point=scp_view[c01_index][:,0]
-                c01_b_point=scp_view[c01_index][:,1]
-                tile_alpha[c01_index]= (view_ray_c_d_ratio[c01_index]- 0)*(c01_b_point-c01_a_point)/0.3 +c01_a_point
+                # #attention the critical point interval must be excluded
+                # c01_index= view_ray_c_d_ratio <=0.3 
+                # #print("c01_index.sum():")
+                # #print(c01_index.sum())
+                # c01_a_point=scp_view[c01_index][:,0]
+                # c01_b_point=scp_view[c01_index][:,1]
+                # tile_alpha[c01_index]= (view_ray_c_d_ratio[c01_index]- 0)*(c01_b_point-c01_a_point)/0.3 +c01_a_point
                 
-                ##
-                c02_index= (view_ray_c_d_ratio > 0.3) & (view_ray_c_d_ratio <=0.6)
-                #print("c02_index.sum():")
-                #print(c02_index.sum())
-                c02_a_point=scp_view[c02_index][:,1]
-                c02_b_point=scp_view[c02_index][:,2]
-                tile_alpha[c02_index]= (view_ray_c_d_ratio[c02_index]- 0.3)*(c02_b_point-c02_a_point)/0.3 +c02_a_point
+                # ##
+                # c02_index= (view_ray_c_d_ratio > 0.3) & (view_ray_c_d_ratio <=0.6)
+                # #print("c02_index.sum():")
+                # #print(c02_index.sum())
+                # c02_a_point=scp_view[c02_index][:,1]
+                # c02_b_point=scp_view[c02_index][:,2]
+                # tile_alpha[c02_index]= (view_ray_c_d_ratio[c02_index]- 0.3)*(c02_b_point-c02_a_point)/0.3 +c02_a_point
                 
-                ##
-                c03_index= (view_ray_c_d_ratio > 0.6) & (view_ray_c_d_ratio <=0.9) 
-                #print("c03_index.sum():")
-                #print(c03_index.sum())
-                c03_a_point=scp_view[c03_index][:,2]
-                c03_b_point=scp_view[c03_index][:,3]
-                tile_alpha[c03_index]= (view_ray_c_d_ratio[c03_index]- 0.6)*(c03_b_point-c03_a_point)/0.3 +c03_a_point
+                # ##
+                # c03_index= (view_ray_c_d_ratio > 0.6) & (view_ray_c_d_ratio <=0.9) 
+                # #print("c03_index.sum():")
+                # #print(c03_index.sum())
+                # c03_a_point=scp_view[c03_index][:,2]
+                # c03_b_point=scp_view[c03_index][:,3]
+                # tile_alpha[c03_index]= (view_ray_c_d_ratio[c03_index]- 0.6)*(c03_b_point-c03_a_point)/0.3 +c03_a_point
 
-                ##
-                c04_index= (view_ray_c_d_ratio > 0.9) & (view_ray_c_d_ratio <=1.0)
-                #print("c04_index.sum():")
-                #print(c04_index.sum())
-                c04_a_point=scp_view[c04_index][:,3]
-                c04_b_point=scp_view[c04_index][:,4]
-                tile_alpha[c04_index]= (view_ray_c_d_ratio[c04_index]- 0.9)*(c04_b_point-c04_a_point)/0.1+c04_a_point
+                # ##
+                # c04_index= (view_ray_c_d_ratio > 0.9) & (view_ray_c_d_ratio <=1.0)
+                # #print("c04_index.sum():")
+                # #print(c04_index.sum())
+                # c04_a_point=scp_view[c04_index][:,3]
+                # c04_b_point=scp_view[c04_index][:,4]
+                # tile_alpha[c04_index]= (view_ray_c_d_ratio[c04_index]- 0.9)*(c04_b_point-c04_a_point)/0.1+c04_a_point
 
                 ###cal the acc alpha
                 tile_1_alpha_acc= torch.cat(

@@ -8,6 +8,7 @@ from gaussian_splatting.utils.camera_utils import to_viewpoint_camera
 from gaussian_splatting.utils.point_utils import get_point_clouds
 from gaussian_splatting.s_model import SModel
 from gaussian_splatting.s_render import SRenderer
+import time
 
 import contextlib
 
@@ -43,7 +44,10 @@ class SSTrainer(Trainer):
             prof = contextlib.nullcontext()
 
         with prof:
+            fromt =round(time.time() * 1000)
             out = self.sRender(pc=self.model, camera=camera)
+            print("render cost :")
+            print(round(time.time() * 1000)-fromt)
 
         if USE_PROFILE:
             print(prof.key_averages(group_by_stack_n=True).table(sort_by='self_cuda_time_total', row_limit=20))
