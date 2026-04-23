@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
 
     render_kwargs = {
-        'white_bkgd': True,
+        'white_bkgd': False,
         'active_sh_degree':SH_DEGREE,
     }
 

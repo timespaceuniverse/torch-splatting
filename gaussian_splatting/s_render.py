@@ -137,7 +137,7 @@ class SRenderer(nn.Module):
     def render(self, camera, pixel_boundary,points,color, opacity_sigma,scales,
                depth,pixel_direction_world,pixel_grid):
         
-        self.render_color = torch.ones(*pixel_grid.shape[:2], 3).to('cuda')
+        self.render_color = torch.zeros(*pixel_grid.shape[:2], 3).to('cuda')
         self.render_alpha = torch.zeros(*pixel_grid.shape[:2], 1).to('cuda')
         #self.render_depth = torch.zeros(*pixel_grid.shape[:2], 1).to('cuda')
 
@@ -248,10 +248,10 @@ class SRenderer(nn.Module):
  
                 final_tile_color = ((T*tile_alpha)@sorted_color) 
                 
-                if self.white_bkgd:
-                    final_tile_color[:,:,0]+=(T[:,:,-1])*1.0
-                    final_tile_color[:,:,1]+=(T[:,:,-1])*1.0
-                    final_tile_color[:,:,2]+=(T[:,:,-1])*1.0
+                # if self.white_bkgd:
+                #     final_tile_color[:,:,0]+=(T[:,:,-1])*1.0
+                #     final_tile_color[:,:,1]+=(T[:,:,-1])*1.0
+                #     final_tile_color[:,:,2]+=(T[:,:,-1])*1.0
 
                 self.render_color[w:w+TILE_SIZE,h:h+TILE_SIZE]=final_tile_color
                 self.render_alpha = (T*tile_alpha).sum(dim=-1)

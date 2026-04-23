@@ -58,7 +58,9 @@ def read_all(folder, resize_factor=1.):
     src_depths = torch.stack(src_depths, axis=0)
     src_rgbs = torch.stack(src_rgbs, axis=0)
     src_cameras = torch.stack(src_cameras, axis=0)
-    src_rgbs = src_alphas[..., None] * src_rgbs + (1-src_alphas)[..., None]
+    
+    #src_rgbs = src_alphas[..., None] * src_rgbs + (1-src_alphas)[..., None]
+    
 
     return {
         "rgb": src_rgbs[..., :3],
@@ -68,7 +70,7 @@ def read_all(folder, resize_factor=1.):
     }
 
 
-def read_image(rgb_file, pose, intrinsic_, max_depth, resize_factor=1., white_bkgd=True):
+def read_image(rgb_file, pose, intrinsic_, max_depth, resize_factor=1., white_bkgd=False):
     rgb = torch.from_numpy(imageio.imread(rgb_file).astype(np.float32) / 255.0)
     depth = torch.from_numpy(imageio.imread(rgb_file[:-7]+'depth.png').astype(np.float32) / 255.0 * max_depth)
     alpha = torch.from_numpy(imageio.imread(rgb_file[:-7]+'alpha.png').astype(np.float32) / 255.0)
