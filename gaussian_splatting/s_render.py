@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import math
 from einops import reduce
+from datetime import datetime
 
 def inverse_sigmoid(x):
     return torch.log(x/(1-x))
@@ -136,7 +137,7 @@ class SRenderer(nn.Module):
     def render(self, camera, pixel_boundary,points,color, opacity_sigma,scales,
                depth,pixel_direction_world,pixel_grid):
         
-        self.render_color = torch.zeros(*pixel_grid.shape[:2], 3).to('cuda')
+        self.render_color = torch.ones(*pixel_grid.shape[:2], 3).to('cuda')
         self.render_alpha = torch.zeros(*pixel_grid.shape[:2], 1).to('cuda')
         #self.render_depth = torch.zeros(*pixel_grid.shape[:2], 1).to('cuda')
 
@@ -159,10 +160,12 @@ class SRenderer(nn.Module):
         TILE_SIZE = 64
         for w in range(0, camera.image_width, TILE_SIZE):
             for h in range(0, camera.image_height, TILE_SIZE):
-
+                
+                
                 over_tl = pixel_boundary[:,0].clip(min=w) , pixel_boundary[:,2].clip(min=h)
                 over_br = pixel_boundary[:,1].clip(max=w+TILE_SIZE-1), pixel_boundary[:,3].clip(max=h+TILE_SIZE-1)
                 in_mask = (over_br[0] > over_tl[0]) & (over_br[1] > over_tl[1]) # in this tile
+                
 
                 if not in_mask.sum() > 0:
                     continue
@@ -175,16 +178,20 @@ class SRenderer(nn.Module):
                 # sorted_color  = color[in_mask][index]
                 # sorted_critical_points= critical_points[in_mask][index]
 
+
+                
                 sorted_point2camera= point2camera[in_mask]
                 sorted_opacity_sigma = opacity_sigma[in_mask]
                 sorted_scales = scales[in_mask]
                 sorted_color  = color[in_mask]
-
-
+                
+                
+                 
                 tile_pixel_direction_world = pixel_direction_world[w:w+TILE_SIZE,h:h+TILE_SIZE]
                 view_ray_center_vector=torch.cross(tile_pixel_direction_world.unsqueeze(2) ,sorted_point2camera.unsqueeze(0).unsqueeze(0))
                 view_ray_center_dsqaure=(view_ray_center_vector**2).sum(dim=-1)
-               
+                
+                 
 
                 #view_ray_c_d_ratio = view_ray_center_dsqaure/(sorted_scales*sorted_scales)
                 ######debug#################
@@ -192,11 +199,8 @@ class SRenderer(nn.Module):
                 #mapping_points= from_world_2_pixel( sorted_xyz , camera)
                 #print(mapping_points)
                 
-                
                 ######debug#################
                 tile_alpha = 1-torch.exp(-2.0*sorted_opacity_sigma*torch.sqrt(torch.clamp(sorted_scales*sorted_scales-view_ray_center_dsqaure, min=0)))
-                
-                
                 ######debug#################
                 #critical points , distance => final opacity and color
                 # tile_alpha = torch.zeros(view_ray_c_d_ratio.shape,device="cuda")
@@ -240,16 +244,21 @@ class SRenderer(nn.Module):
                     (torch.ones(tile_alpha.shape[0], tile_alpha.shape[1], 1, dtype=tile_alpha.dtype,device=tile_alpha.device),
                       (1.0-tile_alpha)[..., :-1]), dim=-1)
 
-                T = tile_1_alpha_acc.cumprod(dim=-1)
+                T = tile_1_alpha_acc.cumprod(dim=-1)            
+ 
+                final_tile_color = ((T*tile_alpha)@sorted_color) 
                 
-                final_tile_color = ((T*tile_alpha)@sorted_color) #[w h 3]
-                
+                if self.white_bkgd:
+                    final_tile_color[:,:,0]+=(T[:,:,-1])*1.0
+                    final_tile_color[:,:,1]+=(T[:,:,-1])*1.0
+                    final_tile_color[:,:,2]+=(T[:,:,-1])*1.0
+
                 self.render_color[w:w+TILE_SIZE,h:h+TILE_SIZE]=final_tile_color
                 self.render_alpha = (T*tile_alpha).sum(dim=-1)
                  
         return {
-            "render": self.render_color,
-            "alpha": self.render_alpha,
+            "render": self.render_color.permute(1,0,2),
+            "alpha": self.render_alpha.permute(1,0),
         }
 
         # if(self.pix_coord is None):
@@ -346,6 +355,7 @@ class SRenderer(nn.Module):
             
             #
             pixel_xyz = torch.cat((pixel_xy, torch.ones((pixel_xy.shape[0],pixel_xy.shape[1],1),device="cuda", dtype=torch.float)), dim=-1)
+                
             direction = pixel_xyz @ (camera.c2w[:3,:3].permute(1,0))
             
             #the pixel related view normalized direction in world space

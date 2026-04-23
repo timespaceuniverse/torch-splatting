@@ -23,17 +23,19 @@ class SModel(nn.Module):
         # self.setup_functions()
         self.debug = debug
 
-    def create_from_pcd(self, pcd:PointCloud):
+    def create_from_pcd(self, pcd:PointCloud , camera):
         """
             create the guassian model from a color point cloud
         """
         points = pcd.coords
         colors = pcd.select_channels(['R', 'G', 'B']) / 255.
 
-
-
+    
         fused_point_cloud = torch.tensor(np.asarray(points)).float().cuda()
         fused_color =  torch.tensor(np.asarray(colors)).float().cuda()
+
+        #fused_point_cloud= fused_point_cloud[:1]
+        #fused_color= fused_color[:1]
 
         #fused_color = RGB2SH(torch.tensor(np.asarray(colors)).float().cuda())
 
@@ -69,8 +71,22 @@ class SModel(nn.Module):
 
         #fused_color[:,:]=0.0
         fused_color[:,:]= 0.0 # after sigmoid it is around 0.0
+
+        fused_point_cloud[:,0]=torch.rand(fused_point_cloud.shape[0])-0.5
+        fused_point_cloud[:,1]=torch.rand(fused_point_cloud.shape[0])-0.5
+
+        
         scales = torch.ones((fused_point_cloud.shape[0]), device="cuda")*0.02
         opacity_sigma = torch.ones((fused_point_cloud.shape[0]), device="cuda")*2.0 # after sigmoid which is around 0.1
+
+        #####for debug
+        # camera_space_p0= torch.tensor([0.0 , 0.2 , 1 , 1.0],device="cuda")
+        # fused_point_cloud[0]= (camera_space_p0 @ (camera.c2w.permute(1,0)))[:3]
+        # fused_color[0]= torch.tensor([0.0 , 100.0 , 0.0],device="cuda")  
+        # opacity_sigma[0] = torch.tensor(1.0,device="cuda") 
+        # scales[0] = torch.tensor(0.1,device="cuda") 
+
+
 
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
         self._color =  nn.Parameter(fused_color.requires_grad_(True))

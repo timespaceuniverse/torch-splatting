@@ -29,6 +29,7 @@ def read_camera(folder):
         w2c_opencv[1:3] *= -1
         c2w_opencv = np.linalg.inv(w2c_opencv)
         poses.append(np.array(c2w_opencv))
+        
         intrinsics.append(np.array(item['intrinsic']))
     return rgb_files, poses, intrinsics, max_depth
 

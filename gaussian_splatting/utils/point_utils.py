@@ -115,6 +115,9 @@ class PointCloud:
         if len(self.coords) <= num_points:
             return self
         indices = np.random.choice(len(self.coords), size=(num_points,), replace=False)
+        #debug for fix indices
+        #indices = np.random.choice(len(self.coords), size=(len(self.coords),), replace=False)
+        #indices = torch.arange(0,2) 
         return self.subsample(indices, **subsample_kwargs)
 
     @classmethod

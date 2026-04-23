@@ -44,10 +44,10 @@ class SSTrainer(Trainer):
             prof = contextlib.nullcontext()
 
         with prof:
-            fromt =round(time.time() * 1000)
+            #fromt =round(time.time() * 1000)
             out = self.sRender(pc=self.model, camera=camera)
-            print("render cost :")
-            print(round(time.time() * 1000)-fromt)
+            #print("render cost :")
+            #print(round(time.time() * 1000)-fromt)
 
         if USE_PROFILE:
             print(prof.key_averages(group_by_stack_n=True).table(sort_by='self_cuda_time_total', row_limit=20))
@@ -68,14 +68,19 @@ class SSTrainer(Trainer):
     def on_evaluate_step(self, **kwargs):
         import matplotlib.pyplot as plt
         ind = np.random.choice(len(self.data['camera']))
-        ind = 0 
+
         camera = self.data['camera'][ind]
         if USE_GPU_PYTORCH:
             camera = to_viewpoint_camera(camera)
 
         rgb = self.data['rgb'][ind].detach().cpu().numpy()
         out = self.sRender(pc=self.model, camera=camera)
+        
+        #out['render']= torch.zeros((256,256,3),device="cuda")
+        #out['render'][200][0]=torch.tensor([1.0, 0.0, 0.0], device="cuda")
+        
         rgb_pd = out['render'].detach().cpu().numpy()
+ 
         #depth_pd = out['depth'].detach().cpu().numpy()[..., 0]
         #depth = self.data['depth'][ind].detach().cpu().numpy()
         #depth = np.concatenate([depth, depth_pd], axis=1)
@@ -96,11 +101,14 @@ if __name__ == "__main__":
 
     points = get_point_clouds(data['camera'], data['depth'], data['alpha'], data['rgb'])
     raw_points = points.random_sample(2**14)
+
     # raw_points.write_ply(open('points.ply', 'wb'))
 
     sModel = SModel(sh_degree=SH_DEGREE, debug=False)
-    sModel.create_from_pcd(pcd=raw_points)
+    sModel.create_from_pcd(pcd=raw_points,camera=to_viewpoint_camera(data['camera'][3]))
     
+
+
     render_kwargs = {
         'white_bkgd': True,
         'active_sh_degree':SH_DEGREE,
