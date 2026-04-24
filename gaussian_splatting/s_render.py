@@ -131,6 +131,8 @@ class SRenderer(nn.Module):
         self.debug = False
         self.white_bkgd = white_bkgd
         self.pix_coord = None
+
+        self.render_time = 0
         
 
 
@@ -145,6 +147,21 @@ class SRenderer(nn.Module):
         #critical_ratio= torch.tensor([0,0.3,0.6,0.9,1],device="cuda")
         #critical_points= 1-torch.exp(torch.outer(-2*scales*opacity_sigma,torch.sqrt(1-critical_ratio)))
 
+        self.render_time+=1
+        if self.render_time%50 == 0:
+             
+            pixel_boundary_w=pixel_boundary[:,1] - pixel_boundary[:,0]
+            pixel_boundary_h=pixel_boundary[:,3] - pixel_boundary[:,2]
+
+            boundary_small_mask= ( pixel_boundary_w < 1.0 ) | ( pixel_boundary_h < 1.0 )
+            print("boundary small mask count:")
+            print(boundary_small_mask.sum())
+
+            boundary_big_mask= ( pixel_boundary_w > 8.0 ) | ( pixel_boundary_h > 8.0 )
+            print("boundary big mask count:")
+            print(boundary_big_mask.sum())
+
+
     
         sorted_depths, index = torch.sort(depth)
         opacity_sigma = opacity_sigma[index]
@@ -152,6 +169,7 @@ class SRenderer(nn.Module):
         color  = color[index]
         points = points[index]
         pixel_boundary = pixel_boundary[index]
+        
 
         #the points to camera center vector in world space
         point2camera = points-camera.camera_center
@@ -315,6 +333,13 @@ class SRenderer(nn.Module):
         # }
 
 
+    def build_color(self, means3D, shs, camera):
+        rays_o = camera.camera_center
+        rays_d = means3D - rays_o
+        color = eval_sh(self.active_sh_degree, shs.permute(0,2,1), rays_d)
+        color = (color + 0.5).clip(min=0.0)
+        return color
+
 
     @torch.no_grad()
     def gen_pixel_grid(self,camera): 
@@ -323,8 +348,8 @@ class SRenderer(nn.Module):
         #half_w= int(width/2)
         #half_h= int(height/2)
         #1. Define the 1D range for each dimension
-        x = torch.arange(0, camera.image_width, 1) 
-        y = torch.arange(0 ,camera.image_height,1) 
+        x = torch.arange(0, camera.image_width, 1)  #+ torch.rand (1)
+        y = torch.arange(0 ,camera.image_height,1)  #+ torch.rand (1)
 
         # 2. Create meshgrid, which returns dense grids (25, 25)
         # Using indexing='ij' for Cartesian-like behavior
@@ -335,7 +360,10 @@ class SRenderer(nn.Module):
         grid_points = torch.stack([grid_x, grid_y], dim=-1).view(-1, 2)
         grid_points = grid_points.reshape((camera.image_width, camera.image_height, 2))
 
-        return grid_points.to(device="cuda", dtype=torch.float)
+        grid_points=grid_points.to(device="cuda", dtype=torch.float)
+        grid_points+= torch.rand(grid_points.shape,device="cuda")
+
+        return grid_points #grid_points.to(device="cuda", dtype=torch.float)
 
 
     def forward(self, camera, pc, **kwargs):
@@ -371,10 +399,13 @@ class SRenderer(nn.Module):
             in_mask=cal_visible_mask(pc.get_xyz,pc.get_scaling,camera)
             assert in_mask.any(), "No points in the frustum"
             xyz = pc.get_xyz[in_mask]
-            color = pc.get_color[in_mask]
+            #color = pc.get_color[in_mask]
             opacity_sigma = pc.get_opacity_sigma[in_mask]
             scales = pc.get_scaling[in_mask]
+            shs = pc.get_features[in_mask]
 
+        with prof("build color"):
+            color = self.build_color(means3D=xyz, shs=shs, camera=camera)
 
         with prof("cal boundary"):
             pixel_boundary,boundary_mask = cal_pixel_boundary(xyz,scales,camera)
@@ -385,6 +416,7 @@ class SRenderer(nn.Module):
 
         with prof("cal depth"):
             depth = cal_depth(xyz,camera)
+
         
 
         with prof("render"):

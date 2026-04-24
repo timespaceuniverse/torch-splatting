@@ -18,7 +18,7 @@ USE_GPU_PYTORCH = True
 USE_PROFILE = False
 
 
-SH_DEGREE = 0
+SH_DEGREE = 3
 
 class SSTrainer(Trainer):
     def __init__(self, **kwargs):

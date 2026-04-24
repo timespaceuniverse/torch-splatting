@@ -13,7 +13,7 @@ class SModel(nn.Module):
     
     def __init__(self, sh_degree : int=3, debug=False):
         super(SModel, self).__init__()
-        # self.max_sh_degree = sh_degree  
+        self.max_sh_degree=sh_degree
         # self._xyz = torch.empty(0)
         # self._features_dc = torch.empty(0)
         # self._features_rest = torch.empty(0)
@@ -69,15 +69,15 @@ class SModel(nn.Module):
         #fused_point_cloud[:,2]=0.4180
         ###############################
 
-        #fused_color[:,:]=0.0
-        fused_color[:,:]= 0.0 # after sigmoid it is around 0.0
+        
 
         fused_point_cloud[:,0]=torch.rand(fused_point_cloud.shape[0])-0.5
         fused_point_cloud[:,1]=torch.rand(fused_point_cloud.shape[0])-0.5
+        fused_point_cloud[:,2]=torch.rand(fused_point_cloud.shape[0])-0.5
 
         
-        scales = torch.ones((fused_point_cloud.shape[0]), device="cuda")*0.02
-        opacity_sigma = torch.ones((fused_point_cloud.shape[0]), device="cuda")*2.0 # after sigmoid which is around 0.1
+        scales = torch.log ( torch.ones((fused_point_cloud.shape[0]), device="cuda")*0.01)
+        opacity_sigma = torch.ones((fused_point_cloud.shape[0]), device="cuda")*5.0 # after sigmoid which is around 0.1
 
         #####for debug
         # camera_space_p0= torch.tensor([0.0 , 0.2 , 1 , 1.0],device="cuda")
@@ -86,10 +86,26 @@ class SModel(nn.Module):
         # opacity_sigma[0] = torch.tensor(1.0,device="cuda") 
         # scales[0] = torch.tensor(0.1,device="cuda") 
 
+        #color 
 
+        #fused_color[:,:]=0.0
+        #fused_color[:,:]= 0.0 # after sigmoid it is around 0.0
+
+        #rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
+
+        #rots[:, 0] = 1
+        features = torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float().cuda()
+    
+        #self._rotation = nn.Parameter(rots.requires_grad_(True))
+
+
+        #self._color =  nn.Parameter(fused_color.requires_grad_(True))
+         
+        self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))
+        self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True))
 
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
-        self._color =  nn.Parameter(fused_color.requires_grad_(True))
+         
         self._scaling = nn.Parameter(scales.requires_grad_(True))
         self._opacity_sigma = nn.Parameter(opacity_sigma.requires_grad_(True))
          
@@ -103,14 +119,21 @@ class SModel(nn.Module):
 
     @property
     def get_scaling(self):
-        return torch.relu(self._scaling)
+        #return torch.relu(self._scaling)
+        #return torch.relu(torch.clip(self._scaling, max=0.05))  ## debug
+        return  torch.exp(self._scaling)
 
     @property
     def get_xyz(self):
         return  self._xyz
 
+    # @property
+    # def get_color(self):
+    #     #return torch.relu(self._color)
+    #     return torch.sigmoid(self._color)
+
     @property
-    def get_color(self):
-        #return torch.relu(self._color)
-        return torch.sigmoid(self._color)
-    
+    def get_features(self):
+        features_dc = self._features_dc
+        features_rest = self._features_rest
+        return torch.cat((features_dc, features_rest), dim=1)
