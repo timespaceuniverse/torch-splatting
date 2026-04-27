@@ -80,7 +80,7 @@ class SSTrainer(Trainer):
         #out['render'][200][0]=torch.tensor([1.0, 0.0, 0.0], device="cuda")
         
         rgb_pd = out['render'].detach().cpu().numpy()
- 
+        
         #depth_pd = out['depth'].detach().cpu().numpy()[..., 0]
         #depth = self.data['depth'][ind].detach().cpu().numpy()
         #depth = np.concatenate([depth, depth_pd], axis=1)

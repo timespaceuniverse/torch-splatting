@@ -44,9 +44,13 @@ def build_scaling_rotation(s, r):
     L = torch.zeros((s.shape[0], 3, 3), dtype=torch.float, device="cuda")
     R = build_rotation(r)
 
+    # L[:,0,0] = s[:,0]
+    # L[:,1,1] = s[:,1]
+    # L[:,2,2] = s[:,2]
+
     L[:,0,0] = s[:,0]
-    L[:,1,1] = s[:,1]
-    L[:,2,2] = s[:,2]
+    L[:,1,1] = s[:,0]
+    L[:,2,2] = s[:,0]
 
     L = R @ L
     return L
@@ -177,7 +181,7 @@ class GaussRenderer(nn.Module):
         if(self.pix_coord is None):
             self.pix_coord = torch.stack(torch.meshgrid(torch.arange(camera.image_width), torch.arange(camera.image_height), indexing='xy'), dim=-1).to('cuda')
 
-        self.render_color = torch.ones(*self.pix_coord.shape[:2], 3).to('cuda')
+        self.render_color = torch.zeros(*self.pix_coord.shape[:2], 3).to('cuda')
         self.render_depth = torch.zeros(*self.pix_coord.shape[:2], 1).to('cuda')
         self.render_alpha = torch.zeros(*self.pix_coord.shape[:2], 1).to('cuda')
 

@@ -34,6 +34,9 @@ class SModel(nn.Module):
         fused_point_cloud = torch.tensor(np.asarray(points)).float().cuda()
         fused_color =  torch.tensor(np.asarray(colors)).float().cuda()
 
+
+        
+
         #fused_point_cloud= fused_point_cloud[:1]
         #fused_color= fused_color[:1]
 
@@ -76,8 +79,14 @@ class SModel(nn.Module):
         fused_point_cloud[:,2]=torch.rand(fused_point_cloud.shape[0])-0.5
 
         
-        scales = torch.log ( torch.ones((fused_point_cloud.shape[0]), device="cuda")*0.01)
-        opacity_sigma = torch.ones((fused_point_cloud.shape[0]), device="cuda")*5.0 # after sigmoid which is around 0.1
+        scales = torch.log (torch.ones((fused_point_cloud.shape[0]), device="cuda")*0.01)
+
+        #scales = torch.ones((fused_point_cloud.shape[0]), device="cuda")*0.01
+
+        opacity_sigma = torch.ones((fused_point_cloud.shape[0]), device="cuda")*1.0 # after sigmoid which is around 0.1
+
+        funny_point_params =  torch.ones((fused_point_cloud.shape[0],4), device="cuda")*0.5
+        
 
         #####for debug
         # camera_space_p0= torch.tensor([0.0 , 0.2 , 1 , 1.0],device="cuda")
@@ -108,7 +117,8 @@ class SModel(nn.Module):
          
         self._scaling = nn.Parameter(scales.requires_grad_(True))
         self._opacity_sigma = nn.Parameter(opacity_sigma.requires_grad_(True))
-         
+        
+        self.funny_point_params = nn.Parameter(funny_point_params.requires_grad_(True))
    
         return self
     
@@ -117,11 +127,16 @@ class SModel(nn.Module):
         #return torch.relu(self._opacity_sigma)
         return torch.sigmoid(self._opacity_sigma)
 
+
+    @property
+    def get_funny_point_params(self):
+        return self.funny_point_params
     @property
     def get_scaling(self):
         #return torch.relu(self._scaling)
         #return torch.relu(torch.clip(self._scaling, max=0.05))  ## debug
         return  torch.exp(self._scaling)
+        #return  self._scaling
 
     @property
     def get_xyz(self):

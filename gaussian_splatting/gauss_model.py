@@ -67,12 +67,18 @@ class GaussModel(nn.Module):
         features = torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float().cuda()
         #lets try to initilize color with 0 and let computer to optimize it 
         #features[:, :3, 0 ] = fused_color  
-        features[:, 3:, 1:] = 0.0
+        #features[:, 3:, 1:] = 0.0
 
         dist2 = torch.clamp_min(distCUDA2(torch.from_numpy(np.asarray(points)).float().cuda()), 0.0000001)
-        scales = torch.log(torch.sqrt(dist2))[...,None].repeat(1, 3)
+        
+
+        scales_r = torch.log(torch.sqrt(dist2))[...,None]
+        #scales = torch.log(torch.sqrt(dist2))[...,None].repeat(1, 3)
+        scales = scales_r
+        
         rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
         rots[:, 0] = 1
+       
         opacities = inverse_sigmoid(0.1 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
 
         if self.debug:
@@ -81,28 +87,12 @@ class GaussModel(nn.Module):
             opacities = inverse_sigmoid(0.9 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
 
 
-        
+         
+        fused_point_cloud[:,0]=torch.rand(fused_point_cloud.shape[0])-0.5
+        fused_point_cloud[:,1]=torch.rand(fused_point_cloud.shape[0])-0.5
+        fused_point_cloud[:,2]=torch.rand(fused_point_cloud.shape[0])-0.5
 
 
-
-        #lets try some funny initialization
-        #my_x= fused_point_cloud[:,0]
-        #my_y= fused_point_cloud[:,1]
-        #my_z= fused_point_cloud[:,2]
-
-
-        #rx=torch.rand(10)-0.5
-
-        #max_x, _ = torch.max(my_x, dim=0)
-        #max_y, _ = torch.max(my_y, dim=0)
-
-        #min_x, _ = torch.min(my_x, dim=0)
-        #min_y, _ = torch.min(my_y, dim=0)
-
-
-
-        #fused_point_cloud[:,0]=torch.rand(fused_point_cloud.shape[0])-0.5
-        #fused_point_cloud[:,1]=torch.rand(fused_point_cloud.shape[0])-0.5
 
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
         self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))

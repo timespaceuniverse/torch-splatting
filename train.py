@@ -19,7 +19,7 @@ USE_GPU_PYTORCH = True
 USE_PROFILE = False
 
 
-SH_DEGREE = 0
+SH_DEGREE = 3
 
 class GSSTrainer(Trainer):
     def __init__(self, **kwargs):
@@ -65,7 +65,6 @@ class GSSTrainer(Trainer):
     def on_evaluate_step(self, **kwargs):
         import matplotlib.pyplot as plt
         ind = np.random.choice(len(self.data['camera']))
-        ind = 0
         camera = self.data['camera'][ind]
         if USE_GPU_PYTORCH:
             camera = to_viewpoint_camera(camera)
@@ -99,7 +98,7 @@ if __name__ == "__main__":
     gaussModel.create_from_pcd(pcd=raw_points)
     
     render_kwargs = {
-        'white_bkgd': True,
+        'white_bkgd': False,
         'active_sh_degree':SH_DEGREE,
     }
 

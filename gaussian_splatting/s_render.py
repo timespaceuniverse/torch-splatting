@@ -4,6 +4,7 @@ import torch.nn as nn
 import math
 from einops import reduce
 from datetime import datetime
+from torchvision import transforms
 
 def inverse_sigmoid(x):
     return torch.log(x/(1-x))
@@ -32,11 +33,16 @@ def from_world_2_pixel(points,camera):
     p_view = points_o @ camera.world_view_transform
     view_xyz=p_view[:,:3]
     pixel_xyz= view_xyz @ (camera.intrinsic[:3,:3].permute(1,0))
-    return pixel_xyz/pixel_xyz[:,-1]
+    pixel_xy= pixel_xyz[:,0:2]/pixel_xyz[:,2:3]
+
+    pixel_xy[:,0] = pixel_xy[:,0] - camera.intrinsic[0][2]
+    pixel_xy[:,1] = pixel_xy[:,1] - camera.intrinsic[1][2]
+
+    return pixel_xy
 
 
 @torch.no_grad()
-def cal_pixel_boundary(points,scales,camera):
+def cal_pixel_boundary(points,scales,camera,times=1):
     
     points_o = homogeneous(points) # object space
     p_view = points_o @ camera.world_view_transform
@@ -76,7 +82,7 @@ def cal_pixel_boundary(points,scales,camera):
         torch.unsqueeze(v_min,dim=-1),
         torch.unsqueeze(v_max,dim=-1) ], dim=-1)
     
-    return pixel_boundary[boundary_mask],boundary_mask
+    return pixel_boundary[boundary_mask]*times,boundary_mask
 
 
 # def projection(points,camera):
@@ -135,10 +141,40 @@ class SRenderer(nn.Module):
         self.render_time = 0
         
 
+    def antialias(self,img_tensor):
+
+         # 2. Permute to (C, H, W) as expected by torchvision
+        img_tensor = img_tensor.permute(2, 0, 1)
+
+        # 3. Apply Resize transform
+        resize_transform = transforms.Resize((256, 256), antialias=True)
+        resized_tensor = resize_transform(img_tensor)
+
+        # 4. Permute back to (H, W, C) if necessary
+        resized_tensor = resized_tensor.permute(1, 2, 0)
+        return resized_tensor
 
     def render(self, camera, pixel_boundary,points,color, opacity_sigma,scales,
-               depth,pixel_direction_world,pixel_grid):
-        
+               depth,pixel_direction_world,pixel_grid,funny_params):
+
+
+        # self.render_time+=1
+        # if self.render_time%50 == 0:
+             
+        #     pixel_boundary_w=pixel_boundary[:,1] - pixel_boundary[:,0]
+        #     pixel_boundary_h=pixel_boundary[:,3] - pixel_boundary[:,2]
+
+        #     boundary_small_mask= ( pixel_boundary_w < 1.0 ) | ( pixel_boundary_h < 1.0 )
+        #     print("boundary small mask count:")
+        #     print(boundary_small_mask.sum())
+
+        #     boundary_big_mask= ( pixel_boundary_w > 8.0 ) | ( pixel_boundary_h > 8.0 )
+        #     print("boundary big mask count:")
+        #     print(boundary_big_mask.sum())
+
+        #     print("start to remove the too small spheres ")
+
+
         self.render_color = torch.zeros(*pixel_grid.shape[:2], 3).to('cuda')
         self.render_alpha = torch.zeros(*pixel_grid.shape[:2], 1).to('cuda')
         #self.render_depth = torch.zeros(*pixel_grid.shape[:2], 1).to('cuda')
@@ -147,78 +183,100 @@ class SRenderer(nn.Module):
         #critical_ratio= torch.tensor([0,0.3,0.6,0.9,1],device="cuda")
         #critical_points= 1-torch.exp(torch.outer(-2*scales*opacity_sigma,torch.sqrt(1-critical_ratio)))
 
-        self.render_time+=1
-        if self.render_time%50 == 0:
-             
-            pixel_boundary_w=pixel_boundary[:,1] - pixel_boundary[:,0]
-            pixel_boundary_h=pixel_boundary[:,3] - pixel_boundary[:,2]
-
-            boundary_small_mask= ( pixel_boundary_w < 1.0 ) | ( pixel_boundary_h < 1.0 )
-            print("boundary small mask count:")
-            print(boundary_small_mask.sum())
-
-            boundary_big_mask= ( pixel_boundary_w > 8.0 ) | ( pixel_boundary_h > 8.0 )
-            print("boundary big mask count:")
-            print(boundary_big_mask.sum())
-
-
-    
+        
         sorted_depths, index = torch.sort(depth)
         opacity_sigma = opacity_sigma[index]
         scales = scales[index]
         color  = color[index]
         points = points[index]
         pixel_boundary = pixel_boundary[index]
-        
+        #mapping_points = from_world_2_pixel( points , camera)   
+        #funny_params = funny_params[index]
+
 
         #the points to camera center vector in world space
         point2camera = points-camera.camera_center
 
      
         TILE_SIZE = 64
-        for w in range(0, camera.image_width, TILE_SIZE):
-            for h in range(0, camera.image_height, TILE_SIZE):
+        for w in range(0, pixel_grid.shape[0], TILE_SIZE):
+            for h in range(0, pixel_grid.shape[1], TILE_SIZE):
                 
-                
+
                 over_tl = pixel_boundary[:,0].clip(min=w) , pixel_boundary[:,2].clip(min=h)
                 over_br = pixel_boundary[:,1].clip(max=w+TILE_SIZE-1), pixel_boundary[:,3].clip(max=h+TILE_SIZE-1)
                 in_mask = (over_br[0] > over_tl[0]) & (over_br[1] > over_tl[1]) # in this tile
                 
 
+                # pixel_boundary_w=pixel_boundary[:,1] - pixel_boundary[:,0]
+                # pixel_boundary_h=pixel_boundary[:,3] - pixel_boundary[:,2]
+                # boundary_small_mask= ( pixel_boundary_w > 1.0 ) & ( pixel_boundary_h > 1.0 )
+                # in_mask= in_mask & boundary_small_mask
+
+
                 if not in_mask.sum() > 0:
                     continue
-
-                # sorted_depths, index = torch.sort(depth[in_mask])  
-                # sorted_xyz = points[in_mask][index]
-                # sorted_point2camera= point2camera[in_mask][index]
-                # sorted_opacity_sigma = opacity_sigma[in_mask][index]
-                # sorted_scales = scales[in_mask][index]
-                # sorted_color  = color[in_mask][index]
-                # sorted_critical_points= critical_points[in_mask][index]
-
-
-                
+ 
                 sorted_point2camera= point2camera[in_mask]
                 sorted_opacity_sigma = opacity_sigma[in_mask]
                 sorted_scales = scales[in_mask]
                 sorted_color  = color[in_mask]
-                
-                
+                #sorted_funny_params = funny_params[in_mask]
+                #sorted_mapping_points  = mapping_points[in_mask]
                  
+                
+                
                 tile_pixel_direction_world = pixel_direction_world[w:w+TILE_SIZE,h:h+TILE_SIZE]
                 view_ray_center_vector=torch.cross(tile_pixel_direction_world.unsqueeze(2) ,sorted_point2camera.unsqueeze(0).unsqueeze(0))
                 view_ray_center_dsqaure=(view_ray_center_vector**2).sum(dim=-1)
                 
-                 
+
+
+                ##########
+                # pixel_pc_distance=sorted_mapping_points.unsqueeze(0).unsqueeze(0) - pixel_grid[w:w+TILE_SIZE,h:h+TILE_SIZE,:].unsqueeze(2) 
+                # pixel_pc_distance_sm_index = (pixel_pc_distance >0.0) &  (pixel_pc_distance<1.0)
+                # pixel_pc_distance_sm_index = pixel_pc_distance_sm_index.all(dim=-1)
+                #########
+
+
+
 
                 #view_ray_c_d_ratio = view_ray_center_dsqaure/(sorted_scales*sorted_scales)
                 ######debug#################
                 #print(view_ray_c_d_ratio.shape)
-                #mapping_points= from_world_2_pixel( sorted_xyz , camera)
                 #print(mapping_points)
                 
                 ######debug#################
-                tile_alpha = 1-torch.exp(-2.0*sorted_opacity_sigma*torch.sqrt(torch.clamp(sorted_scales*sorted_scales-view_ray_center_dsqaure, min=0)))
+                #tile_alpha = 1-torch.exp(-2.0*sorted_opacity_sigma*torch.sqrt(torch.clamp(sorted_scales*sorted_scales-view_ray_center_dsqaure, min=0)))
+                
+                #tile_alpha = 1-torch.exp(-2.0*sorted_opacity_sigma*torch.sqrt( sorted_scales*sorted_scales*torch.exp(-view_ray_center_dsqaure*5/(sorted_scales*sorted_scales))))
+                
+                
+                # vv= torch.exp(-2.0*view_ray_center_dsqaure/(sorted_scales*sorted_scales))
+                # vv = torch.where(vv > 1.0, torch.tensor(0.0), vv)
+                # tile_alpha = sorted_opacity_sigma * vv
+
+
+                #tile_alpha = sorted_opacity_sigma * torch.exp(-2.0*view_ray_center_dsqaure/(sorted_scales*sorted_scales))
+
+
+                #tile_alpha = 2.0*sorted_opacity_sigma*torch.sqrt(torch.clamp(sorted_scales*sorted_scales-view_ray_center_dsqaure, min=0))*1/(view_ray_center_dsqaure*sorted_funny_params/(sorted_scales*sorted_scales)+1.0)
+                
+                #sigma_ratio = torch.sigmoid((view_ray_center_vector/sorted_scales.view(1,1,sorted_scales.shape[0],1)) * sorted_funny_params[:,:3] +sorted_funny_params[:,3:4])
+
+                tile_alpha = 2.0*sorted_opacity_sigma*torch.sqrt(torch.clamp(sorted_scales*sorted_scales-view_ray_center_dsqaure, min=0))
+                
+                
+                
+                #related_R= sorted_scales.expand(TILE_SIZE, TILE_SIZE, sorted_scales.shape[0])[pixel_pc_distance_sm_index]
+                #related_sigma = sorted_opacity_sigma.expand(TILE_SIZE, TILE_SIZE, sorted_scales.shape[0])[pixel_pc_distance_sm_index] 
+                #tile_alpha[pixel_pc_distance_sm_index]=2.0*related_sigma*torch.sqrt(related_R*related_R)
+                #############################
+
+                #tile_alpha_funny = sorted_funny_params*sorted_opacity_sigma*torch.exp(-view_ray_center_dsqaure/(sorted_scales*sorted_scales))
+
+                #tile_alpha = tile_alpha + tile_alpha_funny
+                
                 ######debug#################
                 #critical points , distance => final opacity and color
                 # tile_alpha = torch.zeros(view_ray_c_d_ratio.shape,device="cuda")
@@ -272,11 +330,19 @@ class SRenderer(nn.Module):
                 #     final_tile_color[:,:,2]+=(T[:,:,-1])*1.0
 
                 self.render_color[w:w+TILE_SIZE,h:h+TILE_SIZE]=final_tile_color
-                self.render_alpha = (T*tile_alpha).sum(dim=-1)
-                 
+
+                #final_tile_alpha = (T*tile_alpha).sum(dim=-1)
+
+                #self.render_alpha[w:w+TILE_SIZE,h:h+TILE_SIZE]=final_tile_alpha[:,:,0]
+        
+        #self.render_color=self.antialias(self.render_color.permute(1,0,2))
+        #self.render_alpha=self.antialias(self.render_alpha)
+        self.render_color=self.render_color.permute(1,0,2)
+
         return {
-            "render": self.render_color.permute(1,0,2),
-            "alpha": self.render_alpha.permute(1,0),
+            "render": self.render_color,
+            #"alpha": self.render_alpha.permute(1,0),
+            "alpha":None,
         }
 
         # if(self.pix_coord is None):
@@ -342,14 +408,14 @@ class SRenderer(nn.Module):
 
 
     @torch.no_grad()
-    def gen_pixel_grid(self,camera): 
+    def gen_pixel_grid(self,camera,times=1): 
 
 
         #half_w= int(width/2)
         #half_h= int(height/2)
         #1. Define the 1D range for each dimension
-        x = torch.arange(0, camera.image_width, 1)  #+ torch.rand (1)
-        y = torch.arange(0 ,camera.image_height,1)  #+ torch.rand (1)
+        x = torch.arange(0, camera.image_width, 1/times)  #+ torch.rand (1)
+        y = torch.arange(0 ,camera.image_height,1/times)  #+ torch.rand (1)
 
         # 2. Create meshgrid, which returns dense grids (25, 25)
         # Using indexing='ij' for Cartesian-like behavior
@@ -358,10 +424,10 @@ class SRenderer(nn.Module):
         # 3. Stack and reshape to get (Number of points, 2)
         # stack gives (2, 5, 5), permute changes to (5, 5, 2), flatten to (25, 2)
         grid_points = torch.stack([grid_x, grid_y], dim=-1).view(-1, 2)
-        grid_points = grid_points.reshape((camera.image_width, camera.image_height, 2))
+        grid_points = grid_points.reshape((camera.image_width*times, camera.image_height*times, 2))
 
         grid_points=grid_points.to(device="cuda", dtype=torch.float)
-        grid_points+= torch.rand(grid_points.shape,device="cuda")
+        grid_points+= 0.5/times#torch.rand(grid_points.shape,device="cuda")
 
         return grid_points #grid_points.to(device="cuda", dtype=torch.float)
 
@@ -403,6 +469,7 @@ class SRenderer(nn.Module):
             opacity_sigma = pc.get_opacity_sigma[in_mask]
             scales = pc.get_scaling[in_mask]
             shs = pc.get_features[in_mask]
+            funny_params = pc.get_funny_point_params[in_mask]
 
         with prof("build color"):
             color = self.build_color(means3D=xyz, shs=shs, camera=camera)
@@ -413,6 +480,7 @@ class SRenderer(nn.Module):
             color = color[boundary_mask]
             opacity_sigma = opacity_sigma[boundary_mask]
             scales = scales[boundary_mask]
+            funny_params= funny_params[boundary_mask]
 
         with prof("cal depth"):
             depth = cal_depth(xyz,camera)
@@ -430,6 +498,7 @@ class SRenderer(nn.Module):
                 depth = depth,
                 pixel_direction_world=pixel_view_direction_world,
                 pixel_grid=pixel_grid,
+                funny_params=funny_params,
             )
 
         return rets
