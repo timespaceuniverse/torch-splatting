@@ -2,7 +2,6 @@ import torch
 import torch.nn  as nn
 import numpy as np
 import math
-from simple_knn._C import distCUDA2
 from gaussian_splatting.utils.point_utils import PointCloud
 from gaussian_splatting.gauss_render import strip_symmetric, inverse_sigmoid, build_scaling_rotation
 from gaussian_splatting.utils.sh_utils import RGB2SH
@@ -83,7 +82,7 @@ class SModel(nn.Module):
 
         #scales = torch.ones((fused_point_cloud.shape[0]), device="cuda")*0.01
 
-        opacity_sigma = torch.ones((fused_point_cloud.shape[0]), device="cuda")*1.0 # after sigmoid which is around 0.1
+        opacity_sigma = torch.ones((fused_point_cloud.shape[0]), device="cuda")*-1.0 # after sigmoid which is around 0.1
 
         funny_point_params =  torch.ones((fused_point_cloud.shape[0],4), device="cuda")*0.5
         

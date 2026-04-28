@@ -198,7 +198,7 @@ class SRenderer(nn.Module):
         point2camera = points-camera.camera_center
 
      
-        TILE_SIZE = 64
+        TILE_SIZE = 128
         for w in range(0, pixel_grid.shape[0], TILE_SIZE):
             for h in range(0, pixel_grid.shape[1], TILE_SIZE):
                 
@@ -247,24 +247,28 @@ class SRenderer(nn.Module):
                 #print(mapping_points)
                 
                 ######debug#################
-                #tile_alpha = 1-torch.exp(-2.0*sorted_opacity_sigma*torch.sqrt(torch.clamp(sorted_scales*sorted_scales-view_ray_center_dsqaure, min=0)))
+                #tile_alpha = 1-torch.exp(-2.0*sorted_opacity_sigma*torch.sqrt(torch.clamp(1-view_ray_center_dsqaure/(sorted_scales*sorted_scales), min=0)))
                 
                 #tile_alpha = 1-torch.exp(-2.0*sorted_opacity_sigma*torch.sqrt( sorted_scales*sorted_scales*torch.exp(-view_ray_center_dsqaure*5/(sorted_scales*sorted_scales))))
                 
-                
-                # vv= torch.exp(-2.0*view_ray_center_dsqaure/(sorted_scales*sorted_scales))
-                # vv = torch.where(vv > 1.0, torch.tensor(0.0), vv)
+
+                tile_alpha =  sorted_opacity_sigma*torch.clamp(2.0-view_ray_center_dsqaure/(sorted_scales*sorted_scales), min=0) ### *****
+
+
+                # vv= torch.exp(-2.0*torch.sqrt(view_ray_center_dsqaure)/(sorted_scales))
+                # vv = torch.where(vv < 0.135, torch.tensor(0.0), vv)
                 # tile_alpha = sorted_opacity_sigma * vv
 
 
                 #tile_alpha = sorted_opacity_sigma * torch.exp(-2.0*view_ray_center_dsqaure/(sorted_scales*sorted_scales))
-
+                
+                
 
                 #tile_alpha = 2.0*sorted_opacity_sigma*torch.sqrt(torch.clamp(sorted_scales*sorted_scales-view_ray_center_dsqaure, min=0))*1/(view_ray_center_dsqaure*sorted_funny_params/(sorted_scales*sorted_scales)+1.0)
                 
                 #sigma_ratio = torch.sigmoid((view_ray_center_vector/sorted_scales.view(1,1,sorted_scales.shape[0],1)) * sorted_funny_params[:,:3] +sorted_funny_params[:,3:4])
 
-                tile_alpha = 2.0*sorted_opacity_sigma*torch.sqrt(torch.clamp(sorted_scales*sorted_scales-view_ray_center_dsqaure, min=0))
+                #tile_alpha = 2.0*sorted_opacity_sigma*torch.sqrt(torch.clamp(sorted_scales*sorted_scales-view_ray_center_dsqaure, min=0))
                 
                 
                 
