@@ -2,7 +2,6 @@ import torch
 import torch.nn  as nn
 import numpy as np
 import math
-from simple_knn._C import distCUDA2
 from gaussian_splatting.utils.point_utils import PointCloud
 from gaussian_splatting.gauss_render import strip_symmetric, inverse_sigmoid, build_scaling_rotation
 from gaussian_splatting.utils.sh_utils import RGB2SH
@@ -69,12 +68,15 @@ class GaussModel(nn.Module):
         #features[:, :3, 0 ] = fused_color  
         #features[:, 3:, 1:] = 0.0
 
-        dist2 = torch.clamp_min(distCUDA2(torch.from_numpy(np.asarray(points)).float().cuda()), 0.0000001)
+        #dist2 = torch.clamp_min(distCUDA2(torch.from_numpy(np.asarray(points)).float().cuda()), 0.0000001)
         
 
-        scales_r = torch.log(torch.sqrt(dist2))[...,None]
+        #scales_r = torch.log(torch.sqrt(dist2))[...,None]
         #scales = torch.log(torch.sqrt(dist2))[...,None].repeat(1, 3)
-        scales = scales_r
+        #scales = scales_r
+
+        scales = torch.log (torch.ones((fused_point_cloud.shape[0],1), device="cuda")*0.01).repeat(1, 3)
+
         
         rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
         rots[:, 0] = 1

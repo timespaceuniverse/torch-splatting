@@ -198,7 +198,7 @@ class SRenderer(nn.Module):
         point2camera = points-camera.camera_center
 
      
-        TILE_SIZE = 128
+        TILE_SIZE = 64
         for w in range(0, pixel_grid.shape[0], TILE_SIZE):
             for h in range(0, pixel_grid.shape[1], TILE_SIZE):
                 
@@ -252,7 +252,7 @@ class SRenderer(nn.Module):
                 #tile_alpha = 1-torch.exp(-2.0*sorted_opacity_sigma*torch.sqrt( sorted_scales*sorted_scales*torch.exp(-view_ray_center_dsqaure*5/(sorted_scales*sorted_scales))))
                 
 
-                tile_alpha =  sorted_opacity_sigma*torch.clamp(2.0-view_ray_center_dsqaure/(sorted_scales*sorted_scales), min=0) ### *****
+                tile_alpha =  sorted_opacity_sigma*torch.clamp(1.0-view_ray_center_dsqaure/(sorted_scales*sorted_scales), min=0) ### *****
 
 
                 # vv= torch.exp(-2.0*torch.sqrt(view_ray_center_dsqaure)/(sorted_scales))
